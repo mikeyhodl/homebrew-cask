@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Standalone scripts are fine to use global variables and top-level methods
+# rubocop:disable Style/GlobalVars, Style/TopLevelMethodDefinition
+
 #
 # list_running_app_ids
 #
@@ -10,7 +13,6 @@
 ###
 
 require "open3"
-require "set"
 require "io/console"
 
 ###
@@ -120,3 +122,4 @@ if $opt_test
 else
   report_apps
 end
+# rubocop:enable Style/GlobalVars, Style/TopLevelMethodDefinition

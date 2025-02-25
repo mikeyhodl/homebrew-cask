@@ -1,12 +1,18 @@
-# typed: false
 # frozen_string_literal: true
 
 require "forwardable"
+require "system_command"
 
 APPLE_LAUNCHJOBS_REGEX =
-  /\A(?:application\.)?com\.apple\.(installer|Preview|Safari|systemevents|systempreferences|Terminal)(?:\.|$)/.freeze
+  /\A(?:application\.)?com\.apple\.
+  (AppStore|installer|Preview|Safari|systemevents|systempreferences|Terminal)
+  (?:\.|$)/x
 
 module Check
+  # TODO: replace with public API like Utils.safe_popen_read that's less likely to be volatile to changes
+  # see https://github.com/Homebrew/brew/pull/16540#issuecomment-1913737000
+  extend SystemCommand::Mixin
+
   CHECKS = {
     installed_apps:       lambda {
       ["/Applications", File.expand_path("~/Applications")]
@@ -29,9 +35,10 @@ module Check
       format_launchjob = lambda { |file|
         name = file.basename(".plist").to_s
 
-        xml, = system_command! "plutil", args: ["-convert", "xml1", "-o", "-", "--", file], sudo: true
+        result = system_command "plutil", args: ["-convert", "xml1", "-o", "-", "--", file], sudo: true
+        return name unless result.success?
 
-        label = Plist.parse_xml(xml)["Label"]
+        label = result.plist["Label"]
         (name == label) ? name : "#{name} (#{label})"
       }
 
@@ -49,7 +56,7 @@ module Check
     },
     loaded_launchjobs:    lambda {
       launchctl = lambda do |sudo|
-        system_command!("/bin/launchctl", args: ["list"], print_stderr: false, sudo: sudo)
+        system_command!("/bin/launchctl", args: ["list"], print_stderr: false, sudo:)
           .stdout
           .lines.drop(1)
           .grep_v(APPLE_LAUNCHJOBS_REGEX)
@@ -138,6 +145,11 @@ module Check
                         .grep_v(/\.\d+\Z/)
 
     missing_running_apps = running_apps - Array(uninstall_directives[:quit])
+
+    # Some applications may launch a browser session after install
+    # Skip Firefox, unless the cask is a Firefox cask
+    missing_running_apps.delete("org.mozilla.firefox") unless cask.token.include?("firefox")
+
     if missing_running_apps.any?
       message = "Some applications are still running, add them to #{Formatter.identifier("uninstall quit:")}\n"
       message += missing_running_apps.join("\n")
